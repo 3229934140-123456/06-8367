@@ -8,6 +8,7 @@ import type {
   Weather,
   Reminder,
 } from '../types';
+import { SeasonStatus } from '../types';
 import { initDB, bulkAdd } from '../db';
 import { fieldService } from '../services/fieldService';
 import { seasonService } from '../services/seasonService';
@@ -277,7 +278,27 @@ export const useAppStore = create<AppStore>((set, get) => ({
   addHarvest: async (harvestData) => {
     try {
       const harvest = await harvestService.addHarvest(harvestData);
+      const existingHarvests = get().harvests.filter((h) => h.seasonId === harvestData.seasonId);
+      const wasFirstHarvest = existingHarvests.length === 0;
       set((state) => ({ harvests: [...state.harvests, harvest] }));
+
+      if (wasFirstHarvest) {
+        const season = get().seasons.find((s) => s.id === harvestData.seasonId);
+        if (season && season.status !== SeasonStatus.HARVESTED) {
+          try {
+            const updatedSeason = await seasonService.updateSeason({
+              ...season,
+              status: SeasonStatus.HARVESTED,
+            });
+            set((state) => ({
+              seasons: state.seasons.map((s) => (s.id === season.id ? updatedSeason : s)),
+            }));
+          } catch (seasonErr) {
+            console.warn('自动更新季节状态失败:', seasonErr);
+          }
+        }
+      }
+
       return harvest;
     } catch (error) {
       set({ error: error instanceof Error ? error.message : '添加收成记录失败' });

@@ -8,6 +8,7 @@ import {
   Trash2,
   Filter,
   X,
+  Upload,
 } from 'lucide-react';
 import Card from '@/components/Common/Card';
 import Button from '@/components/Common/Button';
@@ -18,6 +19,7 @@ import PieChart from '@/components/Charts/PieChart';
 import Table from '@/components/Common/Table';
 import Tag from '@/components/Common/Tag';
 import CostForm from './CostForm';
+import BulkImportModal from '@/components/Modals/BulkImportModal';
 import { useAppStore } from '@/store/useAppStore';
 import { costService } from '@/services/costService';
 import { CostCategory } from '@/types';
@@ -79,6 +81,7 @@ export default function Costs() {
     endDate: '',
   });
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
+  const [showImport, setShowImport] = useState(false);
 
   const costs = useMemo<CostWithDetails[]>(() => {
     return storeCosts.map((c) => {
@@ -299,6 +302,13 @@ export default function Costs() {
           >
             筛选
           </Button>
+          <Button
+            variant="outline"
+            leftIcon={<Upload className="w-4 h-4" />}
+            onClick={() => setShowImport(true)}
+          >
+            批量导入
+          </Button>
           <Button leftIcon={<Plus className="w-4 h-4" />} onClick={() => setShowForm(true)}>
             新增成本
           </Button>
@@ -315,6 +325,12 @@ export default function Costs() {
           }}
         />
       )}
+
+      <BulkImportModal
+        isOpen={showImport}
+        onClose={() => setShowImport(false)}
+        mode="cost"
+      />
 
       {showFilters && (
         <Card>

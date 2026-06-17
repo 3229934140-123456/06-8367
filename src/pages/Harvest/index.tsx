@@ -10,6 +10,7 @@ import {
   AlertTriangle,
   AlertCircle,
   CheckCircle,
+  Upload,
 } from 'lucide-react';
 import Card from '@/components/Common/Card';
 import Button from '@/components/Common/Button';
@@ -21,6 +22,7 @@ import Table from '@/components/Common/Table';
 import StatusBadge from '@/components/Common/StatusBadge';
 import Tag from '@/components/Common/Tag';
 import HarvestForm from './HarvestForm';
+import BulkImportModal from '@/components/Modals/BulkImportModal';
 import { useAppStore } from '@/store/useAppStore';
 import { harvestService } from '@/services/harvestService';
 import type { Harvest, Season, Field, YieldComparison } from '@/types';
@@ -53,6 +55,7 @@ export default function Harvest() {
   const [editData, setEditData] = useState<Harvest | null>(null);
   const [selectedField, setSelectedField] = useState<string>('');
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
+  const [showImport, setShowImport] = useState(false);
 
   const harvests = useMemo<HarvestWithDetails[]>(() => {
     return storeHarvests.map((h) => {
@@ -306,9 +309,19 @@ export default function Harvest() {
           <h1 className="text-2xl font-bold text-gray-900">收成管理</h1>
           <p className="text-gray-500 mt-1">记录和分析作物收成数据</p>
         </div>
-        <Button leftIcon={<Plus className="w-4 h-4" />} onClick={() => setShowForm(true)}>
-          录入收成
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            size="md"
+            leftIcon={<Upload className="w-4 h-4" />}
+            onClick={() => setShowImport(true)}
+          >
+            批量导入
+          </Button>
+          <Button leftIcon={<Plus className="w-4 h-4" />} onClick={() => setShowForm(true)}>
+            录入收成
+          </Button>
+        </div>
       </div>
 
       {showForm && (
@@ -321,6 +334,12 @@ export default function Harvest() {
           }}
         />
       )}
+
+      <BulkImportModal
+        isOpen={showImport}
+        onClose={() => setShowImport(false)}
+        mode="harvest"
+      />
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <MetricCard

@@ -10,9 +10,11 @@ import {
   ChevronDown,
   ArrowUpDown,
   Calculator,
+  PieChart,
+  X,
 } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
-import type { Season, Field, Harvest, Cost } from '@/types';
+import type { Season, Field, Harvest, Cost, CostCategory } from '@/types';
 import {
   calculateProfit,
   calculateYearlyStats,
@@ -26,6 +28,8 @@ import MetricCard from '@/components/Cards/MetricCard';
 import Card from '@/components/Common/Card';
 import Table from '@/components/Common/Table';
 import BarChart from '@/components/Charts/BarChart';
+import PieChartComponent from '@/components/Charts/PieChart';
+import SeasonDetailModal from '@/components/Modals/SeasonDetailModal';
 import { cn } from '@/lib/utils';
 
 interface VarietyProfitData {
@@ -65,6 +69,17 @@ export default function Analytics() {
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
   const [showYearDropdown, setShowYearDropdown] = useState(false);
   const [showCropDropdown, setShowCropDropdown] = useState(false);
+  const [drillSeasonId, setDrillSeasonId] = useState<string | null>(null);
+  const [selectedCropForCost, setSelectedCropForCost] = useState<string | 'all'>('all');
+
+  const drillSeason = useMemo(
+    () => (drillSeasonId ? seasons.find((s) => s.id === drillSeasonId) : undefined),
+    [drillSeasonId, seasons]
+  );
+  const drillField = useMemo(
+    () => (drillSeason ? fields.find((f) => f.id === drillSeason.fieldId) : undefined),
+    [drillSeason, fields]
+  );
 
   const filteredSeasons = useMemo(() => {
     return seasons.filter((s) => {
@@ -164,6 +179,53 @@ export default function Analytics() {
   const leaderboardData = useMemo(() => {
     return [...varietyData].sort((a, b) => b.profit - a.profit).slice(0, 5);
   }, [varietyData]);
+
+  const cropCostBreakdown = useMemo(() => {
+    const years = availableYears.slice(0, 2);
+    const curYear = years[0];
+    const lastYear = years[1];
+
+    const result: Record<
+      string,
+      {
+        crop: string;
+        currentTotal: number;
+        lastTotal: number;
+        byCategory: Record<string, { current: number; last: number }>;
+      }
+    > = {};
+
+    const initCrop = (crop: string) => {
+      if (!result[crop]) {
+        result[crop] = {
+          crop,
+          currentTotal: 0,
+          lastTotal: 0,
+          byCategory: {},
+        };
+      }
+    };
+
+    costs.forEach((c) => {
+      const season = seasons.find((s) => s.id === c.seasonId);
+      if (!season) return;
+      const y = getYearFromDate(season.sowDate);
+      initCrop(season.cropName);
+      const entry = result[season.cropName];
+      if (!entry.byCategory[c.category]) {
+        entry.byCategory[c.category] = { current: 0, last: 0 };
+      }
+      if (y === curYear) {
+        entry.currentTotal += c.amount;
+        entry.byCategory[c.category].current += c.amount;
+      } else if (y === lastYear) {
+        entry.lastTotal += c.amount;
+        entry.byCategory[c.category].last += c.amount;
+      }
+    });
+
+    return result;
+  }, [costs, seasons, availableYears]);
 
   const handleSort = (key: SortKey) => {
     if (sortKey === key) {
@@ -566,10 +628,12 @@ export default function Analytics() {
           <Card.Content>
             <div className="space-y-3">
               {leaderboardData.map((item, index) => (
-                <div
+                <button
+                  type="button"
                   key={item.id}
+                  onClick={() => setDrillSeasonId(item.id)}
                   className={cn(
-                    'flex items-center gap-3 p-3 rounded-xl transition-colors',
+                    'w-full text-left flex items-center gap-3 p-3 rounded-xl transition-colors cursor-pointer hover:ring-2 hover:ring-farm-400',
                     index === 0 && 'bg-gradient-to-r from-yellow-50 to-yellow-100 border border-yellow-200',
                     index === 1 && 'bg-gradient-to-r from-gray-50 to-gray-100 border border-gray-200',
                     index === 2 && 'bg-gradient-to-r from-orange-50 to-orange-100 border border-orange-200',
@@ -615,7 +679,7 @@ export default function Analytics() {
                       ROI {formatPercentage(item.roi)}
                     </p>
                   </div>
-                </div>
+                </button>
               ))}
             </div>
           </Card.Content>
@@ -671,9 +735,126 @@ export default function Analytics() {
             }))}
             data={sortedVarietyData}
             rowKey="id"
+            onRowClick={(item) => setDrillSeasonId(item.id)}
           />
         </Card.Content>
       </Card>
+
+      <Card>
+        <Card.Header>
+          <div className="flex items-center justify-between w-full">
+            <div>
+              <div className="flex items-center gap-2">
+                <PieChart className="w-5 h-5 text-soil-600" />
+                <h3 className="text-lg font-semibold text-gray-900">品种成本拆分对比</h3>
+              </div>
+              <p className="text-sm text-gray-500 mt-1">
+                种子、化肥、农药、人工等分类占比，与上一年同品种对比
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <select
+                value={selectedCropForCost}
+                onChange={(e) => setSelectedCropForCost(e.target.value)}
+                className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-farm-500"
+              >
+                <option value="all">全部作物</option>
+                {availableCrops.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        </Card.Header>
+        <Card.Content>
+          {Object.values(cropCostBreakdown).length === 0 ? (
+            <p className="text-gray-500 py-8 text-center">暂无成本数据</p>
+          ) : (
+            <div className="space-y-6">
+              {Object.values(cropCostBreakdown)
+                .filter((v) => selectedCropForCost === 'all' || v.crop === selectedCropForCost)
+                .map((entry) => {
+                  const categories = Object.entries(entry.byCategory)
+                    .map(([name, v]) => ({ name, ...v }))
+                    .sort((a, b) => b.current - a.current);
+                  const totalCur = entry.currentTotal || 1;
+                  const totalLast = entry.lastTotal || 1;
+                  const yoy = entry.lastTotal
+                    ? ((entry.currentTotal - entry.lastTotal) / entry.lastTotal) * 100
+                    : 0;
+
+                  return (
+                    <div key={entry.crop} className="border border-gray-200 rounded-xl p-4">
+                      <div className="flex items-center justify-between mb-4">
+                        <div>
+                          <h4 className="text-base font-semibold text-gray-900">{entry.crop}</h4>
+                          <p className="text-xs text-gray-500">
+                            本年总成本 {formatCurrency(entry.currentTotal)}
+                            {entry.lastTotal > 0 && (
+                              <span
+                                className={cn(
+                                  'ml-2',
+                                  yoy >= 0 ? 'text-red-600' : 'text-green-600'
+                                )}
+                              >
+                                同比 {yoy >= 0 ? '+' : ''}
+                                {yoy.toFixed(1)}%
+                              </span>
+                            )}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        {categories.length === 0 && (
+                          <p className="text-sm text-gray-500">暂无分类数据</p>
+                        )}
+                        {categories.map((cat) => (
+                          <div key={cat.name}>
+                            <div className="flex justify-between text-sm mb-1">
+                              <span className="text-gray-700">{cat.name}</span>
+                              <span className="text-gray-600">
+                                {formatCurrency(cat.current)} (
+                                {((cat.current / totalCur) * 100).toFixed(1)}%)
+                                {cat.last > 0 && (
+                                  <span
+                                    className={cn(
+                                      'ml-2 text-xs',
+                                      cat.current >= cat.last ? 'text-red-600' : 'text-green-600'
+                                    )}
+                                  >
+                                    vs 上年 {formatCurrency(cat.last)} (
+                                    {((cat.last / totalLast) * 100).toFixed(1)}%)
+                                  </span>
+                                )}
+                              </span>
+                            </div>
+                            <div className="w-full bg-gray-100 rounded-full h-2.5 overflow-hidden">
+                              <div
+                                className="bg-gradient-to-r from-farm-500 to-soil-500 h-2.5 rounded-full"
+                                style={{ width: `${Math.min((cat.current / totalCur) * 100, 100)}%` }}
+                              />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+            </div>
+          )}
+        </Card.Content>
+      </Card>
+
+      <SeasonDetailModal
+        isOpen={!!drillSeasonId}
+        onClose={() => setDrillSeasonId(null)}
+        season={drillSeason}
+        field={drillField}
+        harvests={harvests}
+        costs={costs}
+      />
     </div>
   );
 }
