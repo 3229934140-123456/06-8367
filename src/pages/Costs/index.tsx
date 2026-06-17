@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import {
   DollarSign,
   PieChart as PieChartIcon,
@@ -18,9 +18,8 @@ import PieChart from '@/components/Charts/PieChart';
 import Table from '@/components/Common/Table';
 import Tag from '@/components/Common/Tag';
 import CostForm from './CostForm';
+import { useAppStore } from '@/store/useAppStore';
 import { costService } from '@/services/costService';
-import { seasonService } from '@/services/seasonService';
-import { fieldService } from '@/services/fieldService';
 import { CostCategory } from '@/types';
 import type { Cost, Season, Field, CostStats } from '@/types';
 import { formatCurrency, formatPercentage } from '@/utils/calculationUtils';
@@ -60,16 +59,16 @@ const categoryLabels: Record<string, string> = {
 };
 
 export default function Costs() {
-  const [costs, setCosts] = useState<CostWithDetails[]>([]);
-  const [seasons, setSeasons] = useState<Season[]>([]);
-  const [fields, setFields] = useState<Field[]>([]);
-  const [costStats, setCostStats] = useState<{
-    totalCost: number;
-    byCategory: CostStats[];
-    byMonth: Record<string, number>;
-    bySeason: Record<string, number>;
-  } | null>(null);
-  const [loading, setLoading] = useState(true);
+  const {
+    costs: storeCosts,
+    seasons,
+    fields,
+    isLoading,
+    deleteCost,
+    selectSeasonById,
+    selectFieldById,
+  } = useAppStore();
+
   const [showForm, setShowForm] = useState(false);
   const [editData, setEditData] = useState<Cost | null>(null);
   const [showFilters, setShowFilters] = useState(false);
@@ -81,40 +80,23 @@ export default function Costs() {
   });
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
 
-  useEffect(() => {
-    loadData();
-  }, []);
+  const costs = useMemo<CostWithDetails[]>(() => {
+    return storeCosts.map((c) => {
+      const season = selectSeasonById(c.seasonId);
+      const field = season ? selectFieldById(season.fieldId) : undefined;
+      return {
+        ...c,
+        season,
+        field,
+      };
+    });
+  }, [storeCosts, selectSeasonById, selectFieldById]);
 
-  const loadData = async () => {
-    try {
-      setLoading(true);
-      const [costsData, seasonsData, fieldsData, stats] = await Promise.all([
-        costService.getAllCosts(),
-        seasonService.getAllSeasons(),
-        fieldService.getAllFields(),
-        costService.getCostStats(),
-      ]);
+  const costStats = useMemo(() => {
+    return costService.getCostStatsSync(storeCosts);
+  }, [storeCosts, costService]);
 
-      const costsWithDetails = costsData.map((c) => {
-        const season = seasonsData.find((s) => s.id === c.seasonId);
-        const field = fieldsData.find((f) => f.id === season?.fieldId);
-        return {
-          ...c,
-          season,
-          field,
-        };
-      });
-
-      setCosts(costsWithDetails);
-      setSeasons(seasonsData);
-      setFields(fieldsData);
-      setCostStats(stats);
-    } catch (error) {
-      console.error('加载数据失败:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const loading = isLoading;
 
   const filteredCosts = useMemo(() => {
     let result = [...costs];
@@ -187,7 +169,6 @@ export default function Costs() {
   const handleSubmit = async () => {
     setShowForm(false);
     setEditData(null);
-    await loadData();
   };
 
   const handleEdit = (cost: Cost) => {
@@ -198,8 +179,7 @@ export default function Costs() {
   const handleDelete = async (id: string) => {
     if (window.confirm('确定要删除这条成本记录吗？')) {
       try {
-        await costService.deleteCost(id);
-        await loadData();
+        await deleteCost(id);
       } catch (error) {
         console.error('删除失败:', error);
       }

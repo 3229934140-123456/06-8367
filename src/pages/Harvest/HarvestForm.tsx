@@ -1,13 +1,13 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Plus, X } from 'lucide-react';
 import Card from '@/components/Common/Card';
 import Button from '@/components/Common/Button';
+import { useAppStore } from '@/store/useAppStore';
 import { harvestService } from '@/services/harvestService';
-import { seasonService } from '@/services/seasonService';
-import { fieldService } from '@/services/fieldService';
 import { QualityGrade } from '@/types';
 import type { Harvest, Season, Field } from '@/types';
 import { detectYieldAbnormality, calculateYieldPerAcre, formatWeight, formatCurrency } from '@/utils/calculationUtils';
+import { validateHarvest, hasErrors, type ValidationErrors } from '@/utils/validationUtils';
 import StatusBadge from '@/components/Common/StatusBadge';
 import Tag from '@/components/Common/Tag';
 
@@ -34,6 +34,16 @@ const qualityOptions = [
 ];
 
 export default function HarvestForm({ onSubmit, onCancel, editData }: HarvestFormProps) {
+  const {
+    seasons,
+    fields,
+    harvests: storeHarvests,
+    addHarvest,
+    updateHarvest,
+    selectSeasonById,
+    selectFieldById,
+  } = useAppStore();
+
   const [formData, setFormData] = useState<FormData>({
     seasonId: '',
     harvestDate: new Date().toISOString().split('T')[0],
@@ -43,10 +53,8 @@ export default function HarvestForm({ onSubmit, onCancel, editData }: HarvestFor
     remark: '',
   });
 
-  const [seasons, setSeasons] = useState<Season[]>([]);
-  const [fields, setFields] = useState<Field[]>([]);
   const [loading, setLoading] = useState(false);
-  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [errors, setErrors] = useState<ValidationErrors>({});
   const [abnormalityCheck, setAbnormalityCheck] = useState<{
     isAbnormal: boolean;
     level: 'normal' | 'warning' | 'danger';
@@ -54,10 +62,6 @@ export default function HarvestForm({ onSubmit, onCancel, editData }: HarvestFor
     average: number;
     standardDeviation: number;
   } | null>(null);
-
-  useEffect(() => {
-    loadData();
-  }, []);
 
   useEffect(() => {
     if (editData) {
@@ -72,22 +76,19 @@ export default function HarvestForm({ onSubmit, onCancel, editData }: HarvestFor
     }
   }, [editData]);
 
+  const selectedSeason = useMemo(() => {
+    if (!formData.seasonId) return undefined;
+    return selectSeasonById(formData.seasonId);
+  }, [formData.seasonId, selectSeasonById]);
+
+  const selectedField = useMemo(() => {
+    if (!selectedSeason) return undefined;
+    return selectFieldById(selectedSeason.fieldId);
+  }, [selectedSeason, selectFieldById]);
+
   useEffect(() => {
     checkAbnormality();
   }, [formData.seasonId, formData.actualYield]);
-
-  const loadData = async () => {
-    try {
-      const [seasonsData, fieldsData] = await Promise.all([
-        seasonService.getAllSeasons(),
-        fieldService.getAllFields(),
-      ]);
-      setSeasons(seasonsData);
-      setFields(fieldsData);
-    } catch (error) {
-      console.error('加载数据失败:', error);
-    }
-  };
 
   const checkAbnormality = async () => {
     if (!formData.seasonId || formData.actualYield <= 0) {
@@ -96,8 +97,8 @@ export default function HarvestForm({ onSubmit, onCancel, editData }: HarvestFor
     }
 
     try {
-      const season = seasons.find((s) => s.id === formData.seasonId);
-      const field = fields.find((f) => f.id === season?.fieldId);
+      const season = selectSeasonById(formData.seasonId);
+      const field = season ? selectFieldById(season.fieldId) : undefined;
 
       if (!season || !field) return;
 
@@ -117,38 +118,17 @@ export default function HarvestForm({ onSubmit, onCancel, editData }: HarvestFor
   };
 
   const validate = (): boolean => {
-    const newErrors: Record<string, string> = {};
+    const newErrors: ValidationErrors = {};
 
     if (!formData.seasonId) {
       newErrors.seasonId = '请选择种植季';
     }
-    if (!formData.harvestDate) {
-      newErrors.harvestDate = '请选择采收日期';
-    } else if (selectedSeason) {
-      const harvestDate = new Date(formData.harvestDate);
-      const sowDate = new Date(selectedSeason.sowDate);
-      harvestDate.setHours(0, 0, 0, 0);
-      sowDate.setHours(0, 0, 0, 0);
-      
-      if (harvestDate < sowDate) {
-        newErrors.harvestDate = '采收日期不能早于播种日期';
-      }
-      
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      if (harvestDate > today) {
-        newErrors.harvestDate = '采收日期不能晚于今天';
-      }
-    }
-    if (formData.actualYield <= 0) {
-      newErrors.actualYield = '产量必须大于0';
-    }
-    if (formData.unitPrice < 0) {
-      newErrors.unitPrice = '单价不能为负数';
-    }
+
+    const harvestErrors = validateHarvest(formData, selectedSeason?.sowDate);
+    Object.assign(newErrors, harvestErrors);
 
     setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
+    return !hasErrors(newErrors);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -162,12 +142,12 @@ export default function HarvestForm({ onSubmit, onCancel, editData }: HarvestFor
       let harvest: Harvest;
 
       if (editData) {
-        harvest = await harvestService.updateHarvest({
+        harvest = await updateHarvest({
           ...editData,
           ...formData,
         });
       } else {
-        harvest = await harvestService.addHarvest(formData);
+        harvest = await addHarvest(formData);
       }
 
       onSubmit?.(harvest);
@@ -194,9 +174,6 @@ export default function HarvestForm({ onSubmit, onCancel, editData }: HarvestFor
     setErrors({});
     setAbnormalityCheck(null);
   };
-
-  const selectedSeason = seasons.find((s) => s.id === formData.seasonId);
-  const selectedField = fields.find((f) => f.id === selectedSeason?.fieldId);
 
   const getAbnormalityMessage = () => {
     if (!abnormalityCheck || !abnormalityCheck.isAbnormal) return null;
@@ -237,7 +214,7 @@ export default function HarvestForm({ onSubmit, onCancel, editData }: HarvestFor
               >
                 <option value="">请选择种植季</option>
                 {seasons.map((season) => {
-                  const field = fields.find((f) => f.id === season.fieldId);
+                  const field = selectFieldById(season.fieldId);
                   return (
                     <option key={season.id} value={season.id}>
                       {field?.name} - {season.cropName} ({season.sowDate})

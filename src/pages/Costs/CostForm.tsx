@@ -1,13 +1,12 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Plus, X } from 'lucide-react';
 import Card from '@/components/Common/Card';
 import Button from '@/components/Common/Button';
-import { costService } from '@/services/costService';
-import { seasonService } from '@/services/seasonService';
-import { fieldService } from '@/services/fieldService';
+import { useAppStore } from '@/store/useAppStore';
 import { CostCategory } from '@/types';
 import type { Cost, Season, Field } from '@/types';
 import { formatCurrency } from '@/utils/calculationUtils';
+import { validateCost, hasErrors, type ValidationErrors } from '@/utils/validationUtils';
 
 interface CostFormProps {
   onSubmit?: (cost: Cost) => void;
@@ -35,6 +34,15 @@ const categoryOptions = [
 ];
 
 export default function CostForm({ onSubmit, onCancel, editData }: CostFormProps) {
+  const {
+    seasons,
+    fields,
+    addCost,
+    updateCost,
+    selectSeasonById,
+    selectFieldById,
+  } = useAppStore();
+
   const [formData, setFormData] = useState<FormData>({
     seasonId: '',
     category: CostCategory.FERTILIZER,
@@ -44,14 +52,8 @@ export default function CostForm({ onSubmit, onCancel, editData }: CostFormProps
     remark: '',
   });
 
-  const [seasons, setSeasons] = useState<Season[]>([]);
-  const [fields, setFields] = useState<Field[]>([]);
   const [loading, setLoading] = useState(false);
-  const [errors, setErrors] = useState<Record<string, string>>({});
-
-  useEffect(() => {
-    loadData();
-  }, []);
+  const [errors, setErrors] = useState<ValidationErrors>({});
 
   useEffect(() => {
     if (editData) {
@@ -66,21 +68,18 @@ export default function CostForm({ onSubmit, onCancel, editData }: CostFormProps
     }
   }, [editData]);
 
-  const loadData = async () => {
-    try {
-      const [seasonsData, fieldsData] = await Promise.all([
-        seasonService.getAllSeasons(),
-        fieldService.getAllFields(),
-      ]);
-      setSeasons(seasonsData);
-      setFields(fieldsData);
-    } catch (error) {
-      console.error('加载数据失败:', error);
-    }
-  };
+  const selectedSeason = useMemo(() => {
+    if (!formData.seasonId) return undefined;
+    return selectSeasonById(formData.seasonId);
+  }, [formData.seasonId, selectSeasonById]);
+
+  const selectedField = useMemo(() => {
+    if (!selectedSeason) return undefined;
+    return selectFieldById(selectedSeason.fieldId);
+  }, [selectedSeason, selectFieldById]);
 
   const validate = (): boolean => {
-    const newErrors: Record<string, string> = {};
+    const newErrors: ValidationErrors = {};
 
     if (!formData.seasonId) {
       newErrors.seasonId = '请选择种植季';
@@ -88,18 +87,12 @@ export default function CostForm({ onSubmit, onCancel, editData }: CostFormProps
     if (!formData.category) {
       newErrors.category = '请选择成本分类';
     }
-    if (!formData.name || formData.name.trim() === '') {
-      newErrors.name = '请输入项目名称';
-    }
-    if (formData.amount <= 0) {
-      newErrors.amount = '金额必须大于0';
-    }
-    if (!formData.date) {
-      newErrors.date = '请选择日期';
-    }
+
+    const costErrors = validateCost(formData, selectedSeason?.sowDate);
+    Object.assign(newErrors, costErrors);
 
     setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
+    return !hasErrors(newErrors);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -113,12 +106,12 @@ export default function CostForm({ onSubmit, onCancel, editData }: CostFormProps
       let cost: Cost;
 
       if (editData) {
-        cost = await costService.updateCost({
+        cost = await updateCost({
           ...editData,
           ...formData,
         });
       } else {
-        cost = await costService.addCost(formData);
+        cost = await addCost(formData);
       }
 
       onSubmit?.(cost);
@@ -144,9 +137,6 @@ export default function CostForm({ onSubmit, onCancel, editData }: CostFormProps
     });
     setErrors({});
   };
-
-  const selectedSeason = seasons.find((s) => s.id === formData.seasonId);
-  const selectedField = fields.find((f) => f.id === selectedSeason?.fieldId);
 
   return (
     <Card className="w-full">
@@ -175,7 +165,7 @@ export default function CostForm({ onSubmit, onCancel, editData }: CostFormProps
               >
                 <option value="">请选择种植季</option>
                 {seasons.map((season) => {
-                  const field = fields.find((f) => f.id === season.fieldId);
+                  const field = selectFieldById(season.fieldId);
                   return (
                     <option key={season.id} value={season.id}>
                       {field?.name} - {season.cropName} ({season.sowDate})
@@ -213,7 +203,14 @@ export default function CostForm({ onSubmit, onCancel, editData }: CostFormProps
               <input
                 type="text"
                 value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                onChange={(e) => {
+                  setFormData({ ...formData, name: e.target.value });
+                  if (errors.name && e.target.value.trim()) {
+                    const newErrors = { ...errors };
+                    delete newErrors.name;
+                    setErrors(newErrors);
+                  }
+                }}
                 placeholder="如：尿素、复合肥、人工费用等"
                 className={`w-full px-4 py-2.5 border rounded-lg focus:outline-none focus:ring-2 focus:ring-farm-500 focus:border-transparent transition-all ${
                   errors.name ? 'border-red-500 bg-red-50' : 'border-gray-300'
@@ -231,7 +228,15 @@ export default function CostForm({ onSubmit, onCancel, editData }: CostFormProps
                 step="0.01"
                 min="0"
                 value={formData.amount || ''}
-                onChange={(e) => setFormData({ ...formData, amount: parseFloat(e.target.value) || 0 })}
+                onChange={(e) => {
+                  const val = parseFloat(e.target.value) || 0;
+                  setFormData({ ...formData, amount: val });
+                  if (errors.amount && val > 0) {
+                    const newErrors = { ...errors };
+                    delete newErrors.amount;
+                    setErrors(newErrors);
+                  }
+                }}
                 placeholder="请输入金额"
                 className={`w-full px-4 py-2.5 border rounded-lg focus:outline-none focus:ring-2 focus:ring-farm-500 focus:border-transparent transition-all ${
                   errors.amount ? 'border-red-500 bg-red-50' : 'border-gray-300'
@@ -252,12 +257,34 @@ export default function CostForm({ onSubmit, onCancel, editData }: CostFormProps
               <input
                 type="date"
                 value={formData.date}
-                onChange={(e) => setFormData({ ...formData, date: e.target.value })}
+                min={selectedSeason?.sowDate || ''}
+                max={new Date().toISOString().split('T')[0]}
+                onChange={(e) => {
+                  setFormData({ ...formData, date: e.target.value });
+                  if (errors.date) {
+                    const cDate = new Date(e.target.value);
+                    const sDate = selectedSeason ? new Date(selectedSeason.sowDate) : new Date(0);
+                    const today = new Date();
+                    today.setHours(0, 0, 0, 0);
+                    cDate.setHours(0, 0, 0, 0);
+                    sDate.setHours(0, 0, 0, 0);
+                    if (cDate >= sDate && cDate <= today) {
+                      const newErrors = { ...errors };
+                      delete newErrors.date;
+                      setErrors(newErrors);
+                    }
+                  }
+                }}
                 className={`w-full px-4 py-2.5 border rounded-lg focus:outline-none focus:ring-2 focus:ring-farm-500 focus:border-transparent transition-all ${
                   errors.date ? 'border-red-500 bg-red-50' : 'border-gray-300'
                 }`}
               />
               {errors.date && <p className="mt-1 text-sm text-red-500">{errors.date}</p>}
+              {selectedSeason && !errors.date && (
+                <p className="mt-1 text-xs text-gray-500">
+                  播种日期：{selectedSeason.sowDate}，日期不能早于此日期
+                </p>
+              )}
             </div>
 
             <div>

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import {
   Leaf,
   TrendingUp,
@@ -21,9 +21,8 @@ import Table from '@/components/Common/Table';
 import StatusBadge from '@/components/Common/StatusBadge';
 import Tag from '@/components/Common/Tag';
 import HarvestForm from './HarvestForm';
+import { useAppStore } from '@/store/useAppStore';
 import { harvestService } from '@/services/harvestService';
-import { seasonService } from '@/services/seasonService';
-import { fieldService } from '@/services/fieldService';
 import type { Harvest, Season, Field, YieldComparison } from '@/types';
 import {
   formatWeight,
@@ -40,64 +39,50 @@ interface HarvestWithDetails extends Harvest {
 }
 
 export default function Harvest() {
-  const [harvests, setHarvests] = useState<HarvestWithDetails[]>([]);
-  const [seasons, setSeasons] = useState<Season[]>([]);
-  const [fields, setFields] = useState<Field[]>([]);
-  const [yieldComparisons, setYieldComparisons] = useState<YieldComparison[]>([]);
-  const [abnormalHarvests, setAbnormalHarvests] = useState<YieldComparison[]>([]);
-  const [loading, setLoading] = useState(true);
+  const {
+    fields,
+    seasons,
+    harvests: storeHarvests,
+    isLoading,
+    deleteHarvest,
+    selectSeasonById,
+    selectFieldById,
+  } = useAppStore();
+
   const [showForm, setShowForm] = useState(false);
   const [editData, setEditData] = useState<Harvest | null>(null);
   const [selectedField, setSelectedField] = useState<string>('');
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
 
-  useEffect(() => {
-    loadData();
-  }, []);
+  const harvests = useMemo<HarvestWithDetails[]>(() => {
+    return storeHarvests.map((h) => {
+      const season = selectSeasonById(h.seasonId);
+      const field = season ? selectFieldById(season.fieldId) : undefined;
+      const yieldPerAcre = field ? calculateYieldPerAcre(h.actualYield, field.area) : 0;
+      return {
+        ...h,
+        season,
+        field,
+        yieldPerAcre,
+        revenue: h.actualYield * h.unitPrice,
+      };
+    });
+  }, [storeHarvests, selectSeasonById, selectFieldById]);
 
-  const loadData = async () => {
-    try {
-      setLoading(true);
-      const [harvestsData, seasonsData, fieldsData] = await Promise.all([
-        harvestService.getAllHarvests(),
-        seasonService.getAllSeasons(),
-        fieldService.getAllFields(),
-      ]);
+  const yieldComparisons = useMemo<YieldComparison[]>(() => {
+    if (seasons.length === 0 || fields.length === 0) return [];
+    return harvestService.getYieldComparisonSync(
+      seasons,
+      fields.map((f) => ({ id: f.id, area: f.area })),
+      storeHarvests
+    );
+  }, [seasons, fields, storeHarvests, harvestService]);
 
-      const harvestsWithDetails = harvestsData.map((h) => {
-        const season = seasonsData.find((s) => s.id === h.seasonId);
-        const field = fieldsData.find((f) => f.id === season?.fieldId);
-        const yieldPerAcre = field ? calculateYieldPerAcre(h.actualYield, field.area) : 0;
-        return {
-          ...h,
-          season,
-          field,
-          yieldPerAcre,
-          revenue: h.actualYield * h.unitPrice,
-        };
-      });
+  const abnormalHarvests = useMemo<YieldComparison[]>(() => {
+    return yieldComparisons.filter((c) => c.isAbnormal);
+  }, [yieldComparisons]);
 
-      setHarvests(harvestsWithDetails);
-      setSeasons(seasonsData);
-      setFields(fieldsData);
-
-      const comparisons = await harvestService.getYieldComparison(
-        seasonsData,
-        fieldsData.map((f) => ({ id: f.id, area: f.area }))
-      );
-      setYieldComparisons(comparisons);
-
-      const abnormal = await harvestService.getAbnormalHarvests(
-        seasonsData,
-        fieldsData.map((f) => ({ id: f.id, area: f.area }))
-      );
-      setAbnormalHarvests(abnormal);
-    } catch (error) {
-      console.error('加载数据失败:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const loading = isLoading;
 
   const stats = useMemo(() => {
     const totalYield = harvests.reduce((sum, h) => sum + h.actualYield, 0);
@@ -220,7 +205,6 @@ export default function Harvest() {
   const handleSubmit = async () => {
     setShowForm(false);
     setEditData(null);
-    await loadData();
   };
 
   const handleEdit = (harvest: Harvest) => {
@@ -231,8 +215,7 @@ export default function Harvest() {
   const handleDelete = async (id: string) => {
     if (window.confirm('确定要删除这条收成记录吗？')) {
       try {
-        await harvestService.deleteHarvest(id);
-        await loadData();
+        await deleteHarvest(id);
       } catch (error) {
         console.error('删除失败:', error);
       }

@@ -19,6 +19,7 @@ import { ModalFooter } from '@/components/Common/Modal';
 import Tag from '@/components/Common/Tag';
 import { weatherService } from '@/services/weatherService';
 import { getTodayString, formatDateChinese } from '@/utils/dateUtils';
+import { validateOperation, hasErrors, type ValidationErrors } from '@/utils/validationUtils';
 import { OperationType } from '@/types';
 import type { Operation, Weather, Season } from '@/types';
 
@@ -30,14 +31,7 @@ interface OperationFormProps {
   defaultSeasonId?: string;
 }
 
-interface FormErrors {
-  seasonId?: string;
-  type?: string;
-  date?: string;
-  product?: string;
-  dosage?: string;
-  operator?: string;
-}
+type FormErrors = ValidationErrors;
 
 export default function OperationForm({
   onSubmit,
@@ -128,34 +122,11 @@ export default function OperationForm({
       newErrors.type = '请选择操作类型';
     }
 
-    if (!formData.date) {
-      newErrors.date = '请选择日期';
-    } else {
-      const opDate = new Date(formData.date);
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      if (opDate > today) {
-        newErrors.date = '操作日期不能晚于今天';
-      }
-      if (selectedSeason && opDate < new Date(selectedSeason.sowDate)) {
-        newErrors.date = '操作日期不能早于播种日期';
-      }
-    }
-
-    if (!formData.product.trim()) {
-      newErrors.product = '请输入农资名称';
-    }
-
-    if (!formData.dosage || formData.dosage <= 0) {
-      newErrors.dosage = '请输入有效的用量';
-    }
-
-    if (!formData.operator.trim()) {
-      newErrors.operator = '请输入操作人姓名';
-    }
+    const operationErrors = validateOperation(formData, selectedSeason?.sowDate);
+    Object.assign(newErrors, operationErrors);
 
     setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
+    return !hasErrors(newErrors);
   };
 
   const handleSubmit = async () => {

@@ -26,6 +26,13 @@ import Empty from '@/components/Common/Empty';
 import { seasonService } from '@/services/seasonService';
 import { getCropConfig, getGrowthStage } from '@/data/cropConfigs';
 import { formatDateChinese, getDaysSince } from '@/utils/dateUtils';
+import {
+  validateOperation,
+  validateHarvest,
+  validateCost,
+  hasErrors,
+  type ValidationErrors,
+} from '@/utils/validationUtils';
 import type {
   Season,
   Field,
@@ -76,6 +83,7 @@ export default function SeasonDetail() {
     operator: '',
     remark: '',
   });
+  const [operationErrors, setOperationErrors] = useState<ValidationErrors>({});
   const [harvestForm, setHarvestForm] = useState({
     harvestDate: new Date().toISOString().split('T')[0],
     actualYield: 0,
@@ -83,6 +91,7 @@ export default function SeasonDetail() {
     unitPrice: 0,
     remark: '',
   });
+  const [harvestErrors, setHarvestErrors] = useState<ValidationErrors>({});
   const [costForm, setCostForm] = useState({
     category: '化肥' as CostCategory,
     name: '',
@@ -90,6 +99,7 @@ export default function SeasonDetail() {
     date: new Date().toISOString().split('T')[0],
     remark: '',
   });
+  const [costErrors, setCostErrors] = useState<ValidationErrors>({});
 
   const data = useMemo((): SeasonDetailData | null => {
     const season = selectSeasonById(seasonId);
@@ -235,11 +245,17 @@ export default function SeasonDetail() {
 
   const handleAddOperation = async () => {
     if (!data?.season) return;
+
+    const errors = validateOperation(operationForm, data.season.sowDate);
+    setOperationErrors(errors);
+    if (hasErrors(errors)) return;
+
     await addOperation({
       ...operationForm,
       seasonId: data.season.id,
     });
     setShowOperationModal(false);
+    setOperationErrors({});
     setOperationForm({
       type: '施肥' as OperationType,
       date: new Date().toISOString().split('T')[0],
@@ -253,11 +269,17 @@ export default function SeasonDetail() {
 
   const handleAddHarvest = async () => {
     if (!data?.season) return;
+
+    const errors = validateHarvest(harvestForm, data.season.sowDate);
+    setHarvestErrors(errors);
+    if (hasErrors(errors)) return;
+
     await addHarvest({
       ...harvestForm,
       seasonId: data.season.id,
     });
     setShowHarvestModal(false);
+    setHarvestErrors({});
     setHarvestForm({
       harvestDate: new Date().toISOString().split('T')[0],
       actualYield: 0,
@@ -269,11 +291,17 @@ export default function SeasonDetail() {
 
   const handleAddCost = async () => {
     if (!data?.season) return;
+
+    const errors = validateCost(costForm, data.season.sowDate);
+    setCostErrors(errors);
+    if (hasErrors(errors)) return;
+
     await addCost({
       ...costForm,
       seasonId: data.season.id,
     });
     setShowCostModal(false);
+    setCostErrors({});
     setCostForm({
       category: '化肥' as CostCategory,
       name: '',
@@ -525,13 +553,19 @@ export default function SeasonDetail() {
 
       <Modal
         isOpen={showOperationModal}
-        onClose={() => setShowOperationModal(false)}
+        onClose={() => {
+          setShowOperationModal(false);
+          setOperationErrors({});
+        }}
         title="添加农事操作"
         size="lg"
         footer={
           <ModalFooter
             onConfirm={handleAddOperation}
-            onCancel={() => setShowOperationModal(false)}
+            onCancel={() => {
+              setShowOperationModal(false);
+              setOperationErrors({});
+            }}
             confirmText="添加"
             loading={isLoading}
           />
@@ -558,40 +592,94 @@ export default function SeasonDetail() {
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                日期
+                日期 <span className="text-red-500">*</span>
               </label>
               <input
                 type="date"
                 value={operationForm.date}
-                onChange={(e) => setOperationForm({ ...operationForm, date: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-farm-500 focus:border-farm-500"
+                min={data.season.sowDate}
+                max={new Date().toISOString().split('T')[0]}
+                onChange={(e) => {
+                  setOperationForm({ ...operationForm, date: e.target.value });
+                  if (operationErrors.date) {
+                    const opDate = new Date(e.target.value);
+                    const sowDate = new Date(data.season.sowDate);
+                    const today = new Date();
+                    today.setHours(0, 0, 0, 0);
+                    opDate.setHours(0, 0, 0, 0);
+                    sowDate.setHours(0, 0, 0, 0);
+                    if (opDate >= sowDate && opDate <= today) {
+                      const newErrors = { ...operationErrors };
+                      delete newErrors.date;
+                      setOperationErrors(newErrors);
+                    }
+                  }
+                }}
+                className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-farm-500 focus:border-farm-500 ${
+                  operationErrors.date ? 'border-red-500 bg-red-50' : 'border-gray-300'
+                }`}
               />
+              {operationErrors.date && (
+                <p className="mt-1 text-sm text-red-500">{operationErrors.date}</p>
+              )}
+              {!operationErrors.date && (
+                <p className="mt-1 text-xs text-gray-500">
+                  播种日期：{data.season.sowDate}，操作日期不能早于此日期
+                </p>
+              )}
             </div>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              农资名称
+              农资名称 <span className="text-red-500">*</span>
             </label>
             <input
               type="text"
               value={operationForm.product}
-              onChange={(e) => setOperationForm({ ...operationForm, product: e.target.value })}
+              onChange={(e) => {
+                setOperationForm({ ...operationForm, product: e.target.value });
+                if (operationErrors.product && e.target.value.trim()) {
+                  const newErrors = { ...operationErrors };
+                  delete newErrors.product;
+                  setOperationErrors(newErrors);
+                }
+              }}
               placeholder="如：尿素、杀虫剂等"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-farm-500 focus:border-farm-500"
+              className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-farm-500 focus:border-farm-500 ${
+                operationErrors.product ? 'border-red-500 bg-red-50' : 'border-gray-300'
+              }`}
             />
+            {operationErrors.product && (
+              <p className="mt-1 text-sm text-red-500">{operationErrors.product}</p>
+            )}
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                用量
+                用量 <span className="text-red-500">*</span>
               </label>
               <input
                 type="number"
-                value={operationForm.dosage}
-                onChange={(e) => setOperationForm({ ...operationForm, dosage: Number(e.target.value) })}
-                placeholder="0"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-farm-500 focus:border-farm-500"
+                value={operationForm.dosage || ''}
+                min="0"
+                step="0.01"
+                onChange={(e) => {
+                  const val = Number(e.target.value);
+                  setOperationForm({ ...operationForm, dosage: val });
+                  if (operationErrors.dosage && val > 0) {
+                    const newErrors = { ...operationErrors };
+                    delete newErrors.dosage;
+                    setOperationErrors(newErrors);
+                  }
+                }}
+                placeholder="请输入用量"
+                className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-farm-500 focus:border-farm-500 ${
+                  operationErrors.dosage ? 'border-red-500 bg-red-50' : 'border-gray-300'
+                }`}
               />
+              {operationErrors.dosage && (
+                <p className="mt-1 text-sm text-red-500">{operationErrors.dosage}</p>
+              )}
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -613,15 +701,27 @@ export default function SeasonDetail() {
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              操作人
+              操作人 <span className="text-red-500">*</span>
             </label>
             <input
               type="text"
               value={operationForm.operator}
-              onChange={(e) => setOperationForm({ ...operationForm, operator: e.target.value })}
+              onChange={(e) => {
+                setOperationForm({ ...operationForm, operator: e.target.value });
+                if (operationErrors.operator && e.target.value.trim()) {
+                  const newErrors = { ...operationErrors };
+                  delete newErrors.operator;
+                  setOperationErrors(newErrors);
+                }
+              }}
               placeholder="请输入操作人姓名"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-farm-500 focus:border-farm-500"
+              className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-farm-500 focus:border-farm-500 ${
+                operationErrors.operator ? 'border-red-500 bg-red-50' : 'border-gray-300'
+              }`}
             />
+            {operationErrors.operator && (
+              <p className="mt-1 text-sm text-red-500">{operationErrors.operator}</p>
+            )}
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -640,13 +740,19 @@ export default function SeasonDetail() {
 
       <Modal
         isOpen={showHarvestModal}
-        onClose={() => setShowHarvestModal(false)}
+        onClose={() => {
+          setShowHarvestModal(false);
+          setHarvestErrors({});
+        }}
         title="录入收成"
         size="lg"
         footer={
           <ModalFooter
             onConfirm={handleAddHarvest}
-            onCancel={() => setShowHarvestModal(false)}
+            onCancel={() => {
+              setShowHarvestModal(false);
+              setHarvestErrors({});
+            }}
             confirmText="保存"
             loading={isLoading}
           />
@@ -656,14 +762,41 @@ export default function SeasonDetail() {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                采收日期
+                采收日期 <span className="text-red-500">*</span>
               </label>
               <input
                 type="date"
                 value={harvestForm.harvestDate}
-                onChange={(e) => setHarvestForm({ ...harvestForm, harvestDate: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-farm-500 focus:border-farm-500"
+                min={data.season.sowDate}
+                max={new Date().toISOString().split('T')[0]}
+                onChange={(e) => {
+                  setHarvestForm({ ...harvestForm, harvestDate: e.target.value });
+                  if (harvestErrors.harvestDate) {
+                    const hDate = new Date(e.target.value);
+                    const sDate = new Date(data.season.sowDate);
+                    const today = new Date();
+                    today.setHours(0, 0, 0, 0);
+                    hDate.setHours(0, 0, 0, 0);
+                    sDate.setHours(0, 0, 0, 0);
+                    if (hDate >= sDate && hDate <= today) {
+                      const newErrors = { ...harvestErrors };
+                      delete newErrors.harvestDate;
+                      setHarvestErrors(newErrors);
+                    }
+                  }
+                }}
+                className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-farm-500 focus:border-farm-500 ${
+                  harvestErrors.harvestDate ? 'border-red-500 bg-red-50' : 'border-gray-300'
+                }`}
               />
+              {harvestErrors.harvestDate && (
+                <p className="mt-1 text-sm text-red-500">{harvestErrors.harvestDate}</p>
+              )}
+              {!harvestErrors.harvestDate && (
+                <p className="mt-1 text-xs text-gray-500">
+                  播种日期：{data.season.sowDate}，采收日期不能早于此日期
+                </p>
+              )}
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -684,28 +817,57 @@ export default function SeasonDetail() {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                实际产量 (kg)
+                实际产量 (kg) <span className="text-red-500">*</span>
               </label>
               <input
                 type="number"
-                value={harvestForm.actualYield}
-                onChange={(e) => setHarvestForm({ ...harvestForm, actualYield: Number(e.target.value) })}
-                placeholder="0"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-farm-500 focus:border-farm-500"
+                value={harvestForm.actualYield || ''}
+                min="0"
+                step="0.01"
+                onChange={(e) => {
+                  const val = Number(e.target.value);
+                  setHarvestForm({ ...harvestForm, actualYield: val });
+                  if (harvestErrors.actualYield && val > 0) {
+                    const newErrors = { ...harvestErrors };
+                    delete newErrors.actualYield;
+                    setHarvestErrors(newErrors);
+                  }
+                }}
+                placeholder="请输入产量"
+                className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-farm-500 focus:border-farm-500 ${
+                  harvestErrors.actualYield ? 'border-red-500 bg-red-50' : 'border-gray-300'
+                }`}
               />
+              {harvestErrors.actualYield && (
+                <p className="mt-1 text-sm text-red-500">{harvestErrors.actualYield}</p>
+              )}
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                单价 (元/kg)
+                单价 (元/kg) <span className="text-red-500">*</span>
               </label>
               <input
                 type="number"
-                value={harvestForm.unitPrice}
-                onChange={(e) => setHarvestForm({ ...harvestForm, unitPrice: Number(e.target.value) })}
-                placeholder="0"
+                value={harvestForm.unitPrice || ''}
+                min="0"
                 step="0.01"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-farm-500 focus:border-farm-500"
+                onChange={(e) => {
+                  const val = Number(e.target.value);
+                  setHarvestForm({ ...harvestForm, unitPrice: val });
+                  if (harvestErrors.unitPrice && val >= 0) {
+                    const newErrors = { ...harvestErrors };
+                    delete newErrors.unitPrice;
+                    setHarvestErrors(newErrors);
+                  }
+                }}
+                placeholder="请输入单价"
+                className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-farm-500 focus:border-farm-500 ${
+                  harvestErrors.unitPrice ? 'border-red-500 bg-red-50' : 'border-gray-300'
+                }`}
               />
+              {harvestErrors.unitPrice && (
+                <p className="mt-1 text-sm text-red-500">{harvestErrors.unitPrice}</p>
+              )}
             </div>
           </div>
           <div className="p-4 bg-farm-50 rounded-lg">
@@ -732,13 +894,19 @@ export default function SeasonDetail() {
 
       <Modal
         isOpen={showCostModal}
-        onClose={() => setShowCostModal(false)}
+        onClose={() => {
+          setShowCostModal(false);
+          setCostErrors({});
+        }}
         title="添加成本"
         size="lg"
         footer={
           <ModalFooter
             onConfirm={handleAddCost}
-            onCancel={() => setShowCostModal(false)}
+            onCancel={() => {
+              setShowCostModal(false);
+              setCostErrors({});
+            }}
             confirmText="添加"
             loading={isLoading}
           />
@@ -748,8 +916,8 @@ export default function SeasonDetail() {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                成本类别
-              </label>
+              成本类别
+            </label>
               <select
                 value={costForm.category}
                 onChange={(e) => setCostForm({ ...costForm, category: e.target.value as CostCategory })}
@@ -767,40 +935,93 @@ export default function SeasonDetail() {
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                日期
+                日期 <span className="text-red-500">*</span>
               </label>
               <input
                 type="date"
                 value={costForm.date}
-                onChange={(e) => setCostForm({ ...costForm, date: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-farm-500 focus:border-farm-500"
+                min={data.season.sowDate}
+                max={new Date().toISOString().split('T')[0]}
+                onChange={(e) => {
+                  setCostForm({ ...costForm, date: e.target.value });
+                  if (costErrors.date) {
+                    const cDate = new Date(e.target.value);
+                    const sDate = new Date(data.season.sowDate);
+                    const today = new Date();
+                    today.setHours(0, 0, 0, 0);
+                    cDate.setHours(0, 0, 0, 0);
+                    sDate.setHours(0, 0, 0, 0);
+                    if (cDate >= sDate && cDate <= today) {
+                      const newErrors = { ...costErrors };
+                      delete newErrors.date;
+                      setCostErrors(newErrors);
+                    }
+                  }
+                }}
+                className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-farm-500 focus:border-farm-500 ${
+                  costErrors.date ? 'border-red-500 bg-red-50' : 'border-gray-300'
+                }`}
               />
+              {costErrors.date && (
+                <p className="mt-1 text-sm text-red-500">{costErrors.date}</p>
+              )}
+              {!costErrors.date && (
+                <p className="mt-1 text-xs text-gray-500">
+                  播种日期：{data.season.sowDate}，日期不能早于此日期
+                </p>
+              )}
             </div>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              费用名称
+              费用名称 <span className="text-red-500">*</span>
             </label>
             <input
               type="text"
               value={costForm.name}
-              onChange={(e) => setCostForm({ ...costForm, name: e.target.value })}
+              onChange={(e) => {
+                setCostForm({ ...costForm, name: e.target.value });
+                if (costErrors.name && e.target.value.trim()) {
+                  const newErrors = { ...costErrors };
+                  delete newErrors.name;
+                  setCostErrors(newErrors);
+                }
+              }}
               placeholder="如：尿素、人工费用等"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-farm-500 focus:border-farm-500"
+              className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-farm-500 focus:border-farm-500 ${
+                costErrors.name ? 'border-red-500 bg-red-50' : 'border-gray-300'
+              }`}
             />
+            {costErrors.name && (
+              <p className="mt-1 text-sm text-red-500">{costErrors.name}</p>
+            )}
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              金额 (元)
+              金额 (元) <span className="text-red-500">*</span>
             </label>
             <input
               type="number"
-              value={costForm.amount}
-              onChange={(e) => setCostForm({ ...costForm, amount: Number(e.target.value) })}
-              placeholder="0"
+              value={costForm.amount || ''}
+              min="0"
               step="0.01"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-farm-500 focus:border-farm-500"
+              onChange={(e) => {
+                const val = Number(e.target.value);
+                setCostForm({ ...costForm, amount: val });
+                if (costErrors.amount && val > 0) {
+                  const newErrors = { ...costErrors };
+                  delete newErrors.amount;
+                  setCostErrors(newErrors);
+                }
+              }}
+              placeholder="请输入金额"
+              className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-farm-500 focus:border-farm-500 ${
+                costErrors.amount ? 'border-red-500 bg-red-50' : 'border-gray-300'
+              }`}
             />
+            {costErrors.amount && (
+              <p className="mt-1 text-sm text-red-500">{costErrors.amount}</p>
+            )}
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">

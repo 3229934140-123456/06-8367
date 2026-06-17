@@ -228,4 +228,53 @@ export const harvestService = {
 
     return trend.sort((a, b) => a.year - b.year);
   },
+
+  getTotalYieldSync(seasonId: string, harvests: Harvest[]): number {
+    return harvests
+      .filter((h) => h.seasonId === seasonId)
+      .reduce((sum, h) => sum + h.actualYield, 0);
+  },
+
+  getYieldComparisonSync(
+    seasons: Season[],
+    fields: { id: string; area: number }[],
+    harvests: Harvest[]
+  ): YieldComparison[] {
+    const completedSeasons = seasons.filter((s) => s.status === '已采收');
+    const comparisons: YieldComparison[] = [];
+
+    for (const season of completedSeasons) {
+      const field = fields.find((f) => f.id === season.fieldId);
+      if (!field) continue;
+
+      const totalYield = this.getTotalYieldSync(season.id, harvests);
+      const yieldPerAcre = calculateYieldPerAcre(totalYield, field.area);
+      const deviationRate = calculateDeviationRate(yieldPerAcre, season.expectedYield);
+
+      let isAbnormal = false;
+      let abnormalLevel: 'normal' | 'warning' | 'danger' = 'normal';
+
+      if (Math.abs(deviationRate) > 20) {
+        isAbnormal = true;
+        abnormalLevel = 'danger';
+      } else if (Math.abs(deviationRate) > 10) {
+        isAbnormal = true;
+        abnormalLevel = 'warning';
+      }
+
+      comparisons.push({
+        seasonId: season.id,
+        cropName: season.cropName,
+        year: getYearFromDate(season.sowDate),
+        actualYield: yieldPerAcre,
+        expectedYield: season.expectedYield,
+        deviation: yieldPerAcre - season.expectedYield,
+        deviationRate,
+        isAbnormal,
+        abnormalLevel,
+      });
+    }
+
+    return comparisons.sort((a, b) => b.year - a.year);
+  },
 };

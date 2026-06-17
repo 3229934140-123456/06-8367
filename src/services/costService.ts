@@ -212,4 +212,35 @@ export const costService = {
 
     return sortByDate(costs, 'date');
   },
+
+  getCostStatsSync(costs: Cost[]): {
+    totalCost: number;
+    byCategory: CostStats[];
+    byMonth: Record<string, number>;
+    bySeason: Record<string, number>;
+  } {
+    const { byCategory, total, percentages } = calcCostStats(costs);
+
+    const costStats: CostStats[] = Object.entries(byCategory).map(([category, amount]) => ({
+      category,
+      totalAmount: amount,
+      percentage: percentages[category] || 0,
+    }));
+
+    const byMonth: Record<string, number> = {};
+    const bySeason: Record<string, number> = {};
+
+    costs.forEach((cost) => {
+      const monthKey = cost.date.substring(0, 7);
+      byMonth[monthKey] = (byMonth[monthKey] || 0) + cost.amount;
+      bySeason[cost.seasonId] = (bySeason[cost.seasonId] || 0) + cost.amount;
+    });
+
+    return {
+      totalCost: total,
+      byCategory: costStats,
+      byMonth,
+      bySeason,
+    };
+  },
 };
