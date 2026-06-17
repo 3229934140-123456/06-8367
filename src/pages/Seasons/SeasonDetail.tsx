@@ -9,6 +9,8 @@ import {
   DollarSign,
   TrendingUp,
   Truck,
+  Trash2,
+  AlertTriangle,
 } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
 import Card from '@/components/Common/Card';
@@ -22,8 +24,6 @@ import Modal from '@/components/Common/Modal';
 import { ModalFooter } from '@/components/Common/Modal';
 import Empty from '@/components/Common/Empty';
 import { seasonService } from '@/services/seasonService';
-import { harvestService } from '@/services/harvestService';
-import { costService } from '@/services/costService';
 import { getCropConfig, getGrowthStage } from '@/data/cropConfigs';
 import { formatDateChinese, getDaysSince } from '@/utils/dateUtils';
 import type {
@@ -58,12 +58,15 @@ export default function SeasonDetail() {
     addOperation,
     addHarvest,
     addCost,
+    deleteSeason,
     isLoading,
   } = useAppStore();
 
   const [showOperationModal, setShowOperationModal] = useState(false);
   const [showHarvestModal, setShowHarvestModal] = useState(false);
   const [showCostModal, setShowCostModal] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
   const [operationForm, setOperationForm] = useState({
     type: '施肥' as OperationType,
     date: new Date().toISOString().split('T')[0],
@@ -325,6 +328,17 @@ export default function SeasonDetail() {
             onClick={() => setShowCostModal(true)}
           >
             添加成本
+          </Button>
+          <Button
+            variant="ghost"
+            leftIcon={<Trash2 className="w-4 h-4" />}
+            onClick={() => {
+              setDeleteError('');
+              setShowDeleteConfirm(true);
+            }}
+            className="text-gray-400 hover:text-red-600 hover:bg-red-50"
+          >
+            删除
           </Button>
         </div>
       </div>
@@ -801,6 +815,56 @@ export default function SeasonDetail() {
             />
           </div>
         </div>
+      </Modal>
+
+      <Modal
+        isOpen={showDeleteConfirm}
+        onClose={() => setShowDeleteConfirm(false)}
+        title="确认删除种植季"
+        size="md"
+      >
+        <div className="space-y-4">
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center flex-shrink-0">
+              <AlertTriangle className="w-5 h-5 text-red-600" />
+            </div>
+            <div>
+              <p className="text-base font-medium text-gray-900">
+                确定要删除「{data?.season.cropName} - {data?.field?.name}」吗？
+              </p>
+              <p className="text-sm text-gray-500 mt-1">
+                播种日期：{data?.season && formatDateChinese(data.season.sowDate)}
+              </p>
+            </div>
+          </div>
+
+          <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg">
+            <p className="text-sm text-amber-800">
+              <span className="font-medium">注意：</span>删除后该种植季的所有提醒也将被清除。如果存在操作记录、收成记录或成本记录，则无法删除。
+            </p>
+          </div>
+
+          {deleteError && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
+              <p className="text-sm text-red-600">{deleteError}</p>
+            </div>
+          )}
+        </div>
+        <ModalFooter
+          onConfirm={async () => {
+            try {
+              await deleteSeason(seasonId);
+              setShowDeleteConfirm(false);
+              navigate('/seasons');
+            } catch (error) {
+              setDeleteError(error instanceof Error ? error.message : '删除失败');
+            }
+          }}
+          onCancel={() => setShowDeleteConfirm(false)}
+          confirmText="确认删除"
+          confirmVariant="danger"
+          loading={isLoading}
+        />
       </Modal>
     </div>
   );

@@ -230,6 +230,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
       await seasonService.deleteSeason(id);
       set((state) => ({
         seasons: state.seasons.filter((s) => s.id !== id),
+        reminders: state.reminders.filter((r) => r.seasonId !== id),
       }));
     } catch (error) {
       set({ error: error instanceof Error ? error.message : '删除种植季失败' });

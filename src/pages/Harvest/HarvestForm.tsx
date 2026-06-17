@@ -124,6 +124,21 @@ export default function HarvestForm({ onSubmit, onCancel, editData }: HarvestFor
     }
     if (!formData.harvestDate) {
       newErrors.harvestDate = '请选择采收日期';
+    } else if (selectedSeason) {
+      const harvestDate = new Date(formData.harvestDate);
+      const sowDate = new Date(selectedSeason.sowDate);
+      harvestDate.setHours(0, 0, 0, 0);
+      sowDate.setHours(0, 0, 0, 0);
+      
+      if (harvestDate < sowDate) {
+        newErrors.harvestDate = '采收日期不能早于播种日期';
+      }
+      
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      if (harvestDate > today) {
+        newErrors.harvestDate = '采收日期不能晚于今天';
+      }
     }
     if (formData.actualYield <= 0) {
       newErrors.actualYield = '产量必须大于0';
@@ -240,12 +255,34 @@ export default function HarvestForm({ onSubmit, onCancel, editData }: HarvestFor
               <input
                 type="date"
                 value={formData.harvestDate}
-                onChange={(e) => setFormData({ ...formData, harvestDate: e.target.value })}
+                min={selectedSeason?.sowDate || ''}
+                max={new Date().toISOString().split('T')[0]}
+                onChange={(e) => {
+                  setFormData({ ...formData, harvestDate: e.target.value });
+                  if (errors.harvestDate) {
+                    const harvestDate = new Date(e.target.value);
+                    const sowDate = selectedSeason ? new Date(selectedSeason.sowDate) : new Date(0);
+                    const today = new Date();
+                    today.setHours(0, 0, 0, 0);
+                    harvestDate.setHours(0, 0, 0, 0);
+                    sowDate.setHours(0, 0, 0, 0);
+                    if (harvestDate >= sowDate && harvestDate <= today) {
+                      const newErrors = { ...errors };
+                      delete newErrors.harvestDate;
+                      setErrors(newErrors);
+                    }
+                  }
+                }}
                 className={`w-full px-4 py-2.5 border rounded-lg focus:outline-none focus:ring-2 focus:ring-farm-500 focus:border-transparent transition-all ${
                   errors.harvestDate ? 'border-red-500 bg-red-50' : 'border-gray-300'
                 }`}
               />
               {errors.harvestDate && <p className="mt-1 text-sm text-red-500">{errors.harvestDate}</p>}
+              {selectedSeason && !errors.harvestDate && (
+                <p className="mt-1 text-xs text-gray-500">
+                  播种日期：{selectedSeason.sowDate}，采收日期不能早于此日期
+                </p>
+              )}
             </div>
 
             <div>

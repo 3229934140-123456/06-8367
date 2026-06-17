@@ -11,6 +11,7 @@ import {
   ArrowUpDown,
   Calculator,
 } from 'lucide-react';
+import { useAppStore } from '@/store/useAppStore';
 import type { Season, Field, Harvest, Cost } from '@/types';
 import {
   calculateProfit,
@@ -25,7 +26,6 @@ import MetricCard from '@/components/Cards/MetricCard';
 import Card from '@/components/Common/Card';
 import Table from '@/components/Common/Table';
 import BarChart from '@/components/Charts/BarChart';
-import { allMockData } from '@/data/mockData';
 import { cn } from '@/lib/utils';
 
 interface VarietyProfitData {
@@ -47,7 +47,7 @@ type SortKey = keyof VarietyProfitData;
 type SortOrder = 'asc' | 'desc';
 
 export default function Analytics() {
-  const { fields, seasons, harvests, costs } = allMockData;
+  const { fields, seasons, harvests, costs } = useAppStore();
 
   const availableYears = useMemo(() => {
     const years = new Set(seasons.map((s) => getYearFromDate(s.sowDate)));

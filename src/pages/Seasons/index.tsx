@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Plus, Sprout, Calendar, MapPin, TrendingUp, Filter } from 'lucide-react';
+import { Plus, Sprout, Calendar, MapPin, TrendingUp, Filter, Trash2, AlertTriangle } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
 import Card from '@/components/Common/Card';
 import Button from '@/components/Common/Button';
@@ -7,6 +7,7 @@ import StatusBadge from '@/components/Common/StatusBadge';
 import Tag from '@/components/Common/Tag';
 import Empty from '@/components/Common/Empty';
 import Modal from '@/components/Common/Modal';
+import { ModalFooter } from '@/components/Common/Modal';
 import { seasonService } from '@/services/seasonService';
 import { getCropConfig, getGrowthStage } from '@/data/cropConfigs';
 import { getYearFromDate, formatDateChinese } from '@/utils/dateUtils';
@@ -22,12 +23,17 @@ interface SeasonWithProgress extends Season {
 }
 
 export default function SeasonsPage() {
-  const { seasons, fields, addSeason, isLoading } = useAppStore();
+  const { seasons, fields, addSeason, deleteSeason, isLoading } = useAppStore();
   const [selectedFieldId, setSelectedFieldId] = useState<string>('');
   const [selectedYear, setSelectedYear] = useState<string>('');
   const [selectedStatus, setSelectedStatus] = useState<SeasonStatus | ''>('');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [selectedSeasonId, setSelectedSeasonId] = useState<string | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<{ show: boolean; season: SeasonWithProgress | null }>({
+    show: false,
+    season: null,
+  });
+  const [deleteError, setDeleteError] = useState<string>('');
 
   const availableYears = useMemo(() => {
     const years = new Set(seasons.map((s) => getYearFromDate(s.sowDate)));
@@ -76,6 +82,23 @@ export default function SeasonsPage() {
   const handleCreateSeason = async (data: Omit<Season, 'id' | 'createdAt'>) => {
     await addSeason(data);
     setShowCreateModal(false);
+  };
+
+  const handleDeleteClick = (e: React.MouseEvent, season: SeasonWithProgress) => {
+    e.stopPropagation();
+    setDeleteError('');
+    setDeleteConfirm({ show: true, season });
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!deleteConfirm.season) return;
+
+    try {
+      await deleteSeason(deleteConfirm.season.id);
+      setDeleteConfirm({ show: false, season: null });
+    } catch (error) {
+      setDeleteError(error instanceof Error ? error.message : '删除失败');
+    }
   };
 
   if (selectedSeasonId) {
@@ -261,8 +284,17 @@ export default function SeasonsPage() {
                       {season.field?.area || 0} 亩
                     </span>
                   </div>
-                  <div className="text-xs text-gray-500">
-                    预计产量: {season.expectedYield} kg/亩
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-gray-500">
+                      预计产量: {season.expectedYield} kg/亩
+                    </span>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={(e) => handleDeleteClick(e, season)}
+                      leftIcon={<Trash2 className="w-3.5 h-3.5" />}
+                      className="text-gray-400 hover:text-red-600 hover:bg-red-50 p-1.5"
+                    />
                   </div>
                 </div>
               </Card.Content>
@@ -281,6 +313,48 @@ export default function SeasonsPage() {
           onSubmit={handleCreateSeason}
           onCancel={() => setShowCreateModal(false)}
           isLoading={isLoading}
+        />
+      </Modal>
+
+      <Modal
+        isOpen={deleteConfirm.show}
+        onClose={() => setDeleteConfirm({ show: false, season: null })}
+        title="确认删除种植季"
+        size="md"
+      >
+        <div className="space-y-4">
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center flex-shrink-0">
+              <AlertTriangle className="w-5 h-5 text-red-600" />
+            </div>
+            <div>
+              <p className="text-base font-medium text-gray-900">
+                确定要删除「{deleteConfirm.season?.cropName} - {deleteConfirm.season?.field?.name}」吗？
+              </p>
+              <p className="text-sm text-gray-500 mt-1">
+                播种日期：{deleteConfirm.season && formatDateChinese(deleteConfirm.season.sowDate)}
+              </p>
+            </div>
+          </div>
+
+          <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg">
+            <p className="text-sm text-amber-800">
+              <span className="font-medium">注意：</span>删除后该种植季的所有提醒也将被清除。如果存在操作记录、收成记录或成本记录，则无法删除。
+            </p>
+          </div>
+
+          {deleteError && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
+              <p className="text-sm text-red-600">{deleteError}</p>
+            </div>
+          )}
+        </div>
+        <ModalFooter
+          onConfirm={handleConfirmDelete}
+          onCancel={() => setDeleteConfirm({ show: false, season: null })}
+          confirmText="确认删除"
+          confirmVariant="danger"
+          loading={isLoading}
         />
       </Modal>
     </div>

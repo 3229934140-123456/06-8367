@@ -1,8 +1,9 @@
 import { getAll, getById, add, update, remove, getByIndex, getSeasonsByFieldId, getAllBySeasonId } from '../db';
-import type { Season, Operation, Harvest, Cost } from '../types';
+import type { Season, Operation, Harvest, Cost, Reminder } from '../types';
 import { validateSeason, createSeason } from '../db/models';
 import { getDaysSince, getYearFromDate } from '../utils/dateUtils';
 import { getCropConfig, calculateGrowthProgress, getGrowthStage } from '../data/cropConfigs';
+import { getAllBySeasonId as getRemindersBySeasonId, remove as removeReminder } from '../db';
 
 export const seasonService = {
   async getAllSeasons(): Promise<Season[]> {
@@ -56,10 +57,19 @@ export const seasonService = {
     const costs = await this.getSeasonCosts(id);
 
     if (operations.length > 0 || harvests.length > 0 || costs.length > 0) {
-      throw new Error('该种植季下存在关联数据，无法删除');
+      throw new Error('该种植季下存在操作、收成或成本记录，无法删除。请先删除关联的业务数据。');
+    }
+
+    const reminders = await this.getSeasonReminders(id);
+    for (const reminder of reminders) {
+      await removeReminder('reminders', reminder.id);
     }
 
     return remove('seasons', id);
+  },
+
+  async getSeasonReminders(seasonId: string): Promise<Reminder[]> {
+    return getRemindersBySeasonId('reminders', seasonId);
   },
 
   async getSeasonOperations(seasonId: string): Promise<Operation[]> {
