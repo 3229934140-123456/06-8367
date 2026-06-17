@@ -110,11 +110,11 @@ export default function SeasonDetailModal({
       });
     }
 
-    const avgCostPerAcre = field.area > 0 ? stats?.totalCost || 0 / field.area : 0;
-    if (avgCostPerAcre > 1000) {
+    const costPerAcre = stats?.costPerAcre || 0;
+    if (costPerAcre > 800) {
       notes.push({
         type: 'warning',
-        text: `亩均成本 ${formatCurrency(avgCostPerAcre)} 偏高，建议查看成本分类是否合理。`,
+        text: `亩均成本 ${formatCurrency(costPerAcre)} 偏高（地块面积 ${field.area} 亩，总成本 ${formatCurrency(stats?.totalCost || 0)}），建议查看成本分类是否合理。`,
       });
     }
 

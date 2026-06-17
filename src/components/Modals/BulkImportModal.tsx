@@ -12,7 +12,7 @@ import {
   type ParsedHarvestRow,
   type ParsedCostRow,
 } from '@/utils/importUtils';
-import { hasErrors, type ValidationErrors } from '@/utils/validationUtils';
+import { hasErrors } from '@/utils/validationUtils';
 import { cn } from '@/lib/utils';
 import type { Harvest, Cost } from '@/types';
 import { formatCurrency, formatWeight } from '@/utils/calculationUtils';
@@ -130,33 +130,6 @@ export default function BulkImportModal({
       ? '示例表头（任选组合）：地块,作物,年份,采收日期,产量,单价,质量,备注'
       : '示例表头（任选组合）：地块,作物,年份,日期,分类,项目名称,金额,备注';
 
-  const renderRowErrors = (errors: ValidationErrors) => {
-    const entries = Object.entries(errors);
-    if (entries.length === 0) return null;
-    return (
-      <div className="mt-1 flex flex-wrap gap-1">
-        {entries.map(([k, v]) => (
-          <span key={k} className="text-xs bg-red-50 text-red-700 px-2 py-0.5 rounded">
-            {v}
-          </span>
-        ))}
-      </div>
-    );
-  };
-
-  const renderRowWarnings = (warnings: string[]) => {
-    if (warnings.length === 0) return null;
-    return (
-      <div className="mt-1 flex flex-wrap gap-1">
-        {warnings.map((w, i) => (
-          <span key={i} className="text-xs bg-yellow-50 text-yellow-700 px-2 py-0.5 rounded">
-            {w}
-          </span>
-        ))}
-      </div>
-    );
-  };
-
   return (
     <Modal
       isOpen={isOpen}
@@ -260,13 +233,22 @@ export default function BulkImportModal({
         )}
 
         {parsed && rows.length > 0 && (
-          <div className="border border-gray-200 rounded-lg max-h-80 overflow-y-auto">
+          <div className="rounded-lg border-2 border-gray-200 max-h-80 overflow-y-auto">
+            {invalidCount > 0 && (
+              <div className="bg-red-50 border-b border-red-200 px-4 py-2 flex items-center gap-2 sticky top-0 z-10">
+                <AlertCircle className="w-4 h-4 text-red-600 flex-shrink-0" />
+                <span className="text-sm text-red-800 font-medium">
+                  {invalidCount} 行数据不合规，确认导入时将跳过这些行
+                </span>
+              </div>
+            )}
             <table className="w-full text-sm">
-              <thead className="bg-gray-50 sticky top-0">
+              <thead className="bg-gray-50 sticky top-0 z-10">
                 <tr>
-                  <th className="px-3 py-2 text-left text-gray-600 w-12">行</th>
+                  <th className="px-3 py-2 text-left text-gray-600 w-10">行</th>
                   <th className="px-3 py-2 text-left text-gray-600">关键信息</th>
-                  <th className="px-3 py-2 text-left text-gray-600">状态</th>
+                  <th className="px-3 py-2 text-left text-gray-600 w-20">状态</th>
+                  <th className="px-3 py-2 text-left text-gray-600">问题字段</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -279,12 +261,19 @@ export default function BulkImportModal({
                   } else {
                     summary = `${d?.date || '-'} · ${d?.category || ''} · ${d?.name || ''} · ${formatCurrency(d?.amount || 0)}`;
                   }
+                  const errorEntries = Object.entries(row.errors) as [string, string][];
+                  const fieldLabels: Record<string, string> = mode === 'harvest'
+                    ? { seasonId: '种植季', harvestDate: '采收日期', actualYield: '产量', unitPrice: '单价', date: '日期' }
+                    : { seasonId: '种植季', date: '日期', name: '项目名称', amount: '金额', category: '分类' };
+
                   return (
                     <tr
                       key={idx}
-                      className={cn(ok ? 'bg-white' : 'bg-red-50/50')}
+                      className={cn(
+                        ok ? 'bg-white' : 'bg-red-50 border-l-4 border-l-red-500'
+                      )}
                     >
-                      <td className="px-3 py-2 text-gray-500">{row.rowIndex}</td>
+                      <td className="px-3 py-2 text-gray-500 font-mono">{row.rowIndex}</td>
                       <td className="px-3 py-2 text-gray-800">
                         <div>
                           <span className="text-xs text-gray-500">
@@ -292,20 +281,41 @@ export default function BulkImportModal({
                           </span>
                           <div className="text-sm">{summary}</div>
                         </div>
-                        {renderRowWarnings(row.warnings)}
-                        {renderRowErrors(row.errors)}
+                        {row.warnings.length > 0 && (
+                          <div className="mt-1 flex flex-wrap gap-1">
+                            {row.warnings.map((w, i) => (
+                              <span key={i} className="text-xs bg-yellow-50 text-yellow-700 px-2 py-0.5 rounded">
+                                ⚠ {w}
+                              </span>
+                            ))}
+                          </div>
+                        )}
                       </td>
                       <td className="px-3 py-2">
                         {ok ? (
-                          <span className="inline-flex items-center gap-1 text-xs text-green-700">
-                            <CheckCircle2 className="w-3.5 h-3.5" />
+                          <span className="inline-flex items-center gap-1 text-xs text-green-700 bg-green-50 px-2 py-1 rounded-full">
+                            <CheckCircle2 className="w-3 h-3" />
                             有效
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1 text-xs text-red-700">
-                            <X className="w-3.5 h-3.5" />
+                          <span className="inline-flex items-center gap-1 text-xs text-red-700 bg-red-100 px-2 py-1 rounded-full font-medium">
+                            <X className="w-3 h-3" />
                             异常
                           </span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2">
+                        {errorEntries.length > 0 ? (
+                          <div className="space-y-0.5">
+                            {errorEntries.map(([k, v]) => (
+                              <div key={k} className="text-xs">
+                                <span className="font-medium text-red-800">{fieldLabels[k] || k}：</span>
+                                <span className="text-red-600">{v}</span>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="text-xs text-gray-400">-</span>
                         )}
                       </td>
                     </tr>

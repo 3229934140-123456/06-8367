@@ -701,6 +701,16 @@ export default function Analytics() {
                 color: ['#22c55e', '#f59e0b', '#0ea5e9'][idx % 3],
               }))}
               height={350}
+              onBarClick={(dataPoint, dataKey) => {
+                const yearStr = String(dataPoint.name).replace('年', '');
+                const year = parseInt(yearStr, 10);
+                if (isNaN(year)) return;
+                const match = filteredSeasons.find(
+                  (s) =>
+                    getYearFromDate(s.sowDate) === year && s.cropName === dataKey
+                );
+                if (match) setDrillSeasonId(match.id);
+              }}
             />
           ) : (
             <div className="h-64 flex items-center justify-center text-gray-500">

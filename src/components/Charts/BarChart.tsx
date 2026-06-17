@@ -28,6 +28,7 @@ interface BarChartProps {
   showLegend?: boolean;
   horizontal?: boolean;
   className?: string;
+  onBarClick?: (data: DataPoint, dataKey: string) => void;
 }
 
 const defaultColors = ['#22c55e', '#f59e0b', '#0ea5e9', '#ef4444', '#8b5cf6'];
@@ -40,6 +41,7 @@ export default function BarChart({
   showLegend = true,
   horizontal = false,
   className,
+  onBarClick,
 }: BarChartProps) {
   return (
     <div className={cn('w-full', className)} style={{ height }}>
@@ -106,6 +108,15 @@ export default function BarChart({
               name={bar.name}
               fill={bar.color || defaultColors[index % defaultColors.length]}
               radius={[4, 4, 0, 0]}
+              onClick={(payload) => {
+                if (onBarClick && payload) {
+                  const clickedData = data.find((d) => d.name === payload.name);
+                  if (clickedData) {
+                    onBarClick(clickedData, bar.dataKey);
+                  }
+                }
+              }}
+              style={onBarClick ? { cursor: 'pointer' } : undefined}
             >
               {data.map((_, i) => (
                 <Cell
